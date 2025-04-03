@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Queue Display</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="display-page">
+    <div class="display-container">
+        <header>
+            <h1>Hospital Queue Status</h1>
+            <p id="timeDisplay" class="time-display"></p>
+        </header>
+        
+        <div class="display-sections">
+            <div class="display-section">
+                <h2>Now Serving</h2>
+                <div id="currentlyServing" class="currently-serving">
+                    <div class="big-token">-</div>
+                </div>
+            </div>
+            
+            <div class="display-section">
+                <h2>Waiting Queue</h2>
+                <div id="waitingQueue" class="waiting-queue">
+                    <p>Loading queue data...</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Please wait for your token number to be called</p>
+        </footer>
+    </div>
+    
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    
+    <!-- Firebase Database -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
+    <!-- Our application script -->
+    <script src="app.js"></script>
+</body>
+</html>

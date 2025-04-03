@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Token System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            text-align: center;
+        }
+        .button {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 10px;
+            cursor: pointer;
+        }
+        #tokenDisplay {
+            font-size: 24px;
+            margin: 20px;
+        }
+        .token-list {
+            font-size: 20px;
+            margin: 20px;
+            text-align: left;
+        }
+        .called {
+            color: red;
+            text-decoration: line-through;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hospital Token System</h1>
+    
+    <div id="receptionist">
+        <h2>Receptionist Panel</h2>
+        <button class="button" onclick="generateToken()">Generate New Token</button>
+    </div>
+
+    <div id="nurse">
+        <h2>Nurse/Doctor Panel</h2>
+        <button class="button" onclick="callNextToken()">Call Next Patient</button>
+    </div>
+
+    <div id="tokenDisplay">
+        <h2>Current Queue</h2>
+        <div id="tokenList" class="token-list"></div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.x.x/firebase-database.js"></script>
+
+    <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            // Your Firebase config here
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            databaseURL: "YOUR_DATABASE_URL",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const tokensRef = database.ref('tokens');
+
+        let currentToken = 0;
+
+        // Generate new token
+        function generateToken() {
+            currentToken++;
+            tokensRef.push({
+                number: currentToken,
+                called: false,
+                timestamp: Date.now()
+            });
+        }
+
+        // Call next token
+        function callNextToken() {
+            tokensRef.orderByChild('called')
+                .equalTo(false)
+                .limitToFirst(1)
+                .once('value', snapshot => {
+                    const tokens = snapshot.val();
+                    if (tokens) {
+                        const tokenKey = Object.keys(tokens)[0];
+                        const token = tokens[tokenKey];
+                        
+                        // Mark token as called
+                        tokensRef.child(tokenKey).update({
+                            called: true
+                        });
+
+                        // Announce token using Text-to-Speech
+                        announceToken(token.number);
+                    }
+                });
+        }
+
+        // Announce token using Text-to-Speech
+        function announceToken(tokenNumber) {
+            const announcement = new SpeechSynthesisUtterance(
+                `Token number ${tokenNumber}, please proceed`
+            );
+            window.speechSynthesis.speak(announcement);
+        }
+
+        // Update token display in real-time
+        tokensRef.on('value', snapshot => {
+            const tokens = snapshot.val();
+            const tokenList = document.getElementById('tokenList');
+            tokenList.innerHTML = '';
+
+            if (tokens) {
+                Object.values(tokens)
+                    .sort((a, b) => a.number - b.number)
+                    .forEach(token => {
+                        const div = document.createElement('div');
+                        div.textContent = `Token ${token.number}`;
+                        if (token.called) {
+                            div.classList.add('called');
+                        }
+                        tokenList.appendChild(div);
+                    });
+            }
+        });
+    </script>
+</body>
+</html>

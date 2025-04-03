@@ -1,0 +1,309 @@
+// firebase-config.js
+const firebaseConfig = {
+    // Your Firebase config here
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTH_DOMAIN", 
+    databaseURL: "YOUR_DATABASE_URL",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
+
+// Initialize Firebase and export modules
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getDatabase, ref, push, update, query, orderByChild, equalTo, get, onValue } from 'firebase/database';
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+// Anonymous auth helper
+export async function authenticateAnonymously() {
+    try {
+        await signInAnonymously(auth);
+        console.log("Anonymous auth successful");
+    } catch (error) {
+        console.error("Auth error:", error);
+        alert("Authentication failed. Please refresh the page.");
+    }
+}
+
+// app.js
+let currentToken = 0;
+
+// Generate new token with optional priority
+export async function generateToken(priority = 0) {
+    try {
+        const tokensRef = ref(db, 'tokens');
+        currentToken++;
+        await push(tokensRef, {
+            number: currentToken,
+            called: false,
+            priority: priority,
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        console.error("Token generation error:", error);
+        alert("Failed to generate token. Please try again.");
+    }
+}
+
+// Call next token (respecting priority)
+export async function callNextToken() {
+    try {
+        const tokensRef = ref(db, 'tokens');
+        // First check for priority tokens
+        const priorityQuery = query(
+            tokensRef, 
+            orderByChild('priority'),
+            equalTo(1)
+        );
+        
+        let snapshot = await get(priorityQuery);
+        if (!snapshot.exists()) {
+            // If no priority tokens, get oldest uncalled regular token
+            const regularQuery = query(
+                tokensRef,
+                orderByChild('called'),
+                equalTo(false)
+            );
+            snapshot = await get(regularQuery);
+        }
+
+        const tokens = snapshot.val();
+        if (tokens) {
+            const tokenKey = Object.keys(tokens)[0];
+            const token = tokens[tokenKey];
+            
+            await update(ref(db, `tokens/${tokenKey}`), {
+                called: true
+            });
+
+            announceToken(token.number, token.priority);
+        }
+    } catch (error) {
+        console.error("Call next token error:", error);
+        alert("Failed to call next token. Please try again.");
+    }
+}
+
+// Reset all tokens
+export async function resetQueue() {
+    try {
+        await update(ref(db, 'tokens'), null);
+        currentToken = 0;
+        console.log("Queue reset successful");
+    } catch (error) {
+        console.error("Reset error:", error);
+        alert("Failed to reset queue. Please try again.");
+    }
+}
+
+// Announce token using Text-to-Speech
+function announceToken(tokenNumber, priority) {
+    const priorityText = priority === 1 ? "Priority " : "";
+    const announcement = new SpeechSynthesisUtterance(
+        `${priorityText}Token number ${tokenNumber}, please proceed`
+    );
+    window.speechSynthesis.speak(announcement);
+}
+
+// Real-time queue listener
+export function subscribeToQueue(callback) {
+    const tokensRef = ref(db, 'tokens');
+    return onValue(tokensRef, (snapshot) => {
+        const tokens = snapshot.val() || {};
+        const sortedTokens = Object.values(tokens).sort((a, b) => {
+            // Sort by priority first, then by number
+            if (a.priority !== b.priority) {
+                return b.priority - a.priority;
+            }
+            return a.number - b.number;
+        });
+        callback(sortedTokens);
+    });
+}
+
+// admin.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Token System - Admin</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="admin">
+    <h1>Hospital Token System - Admin Panel</h1>
+    
+    <div class="panel">
+        <h2>Token Generation</h2>
+        <button class="button" onclick="generateToken(0)">Generate Regular Token</button>
+        <button class="button priority" onclick="generateToken(1)">Generate Priority Token</button>
+    </div>
+
+    <div class="panel">
+        <h2>Queue Management</h2>
+        <button class="button" onclick="callNextToken()">Call Next Patient</button>
+        <button class="button danger" onclick="resetQueue()">Reset Queue</button>
+    </div>
+
+    <div id="queueDisplay">
+        <h2>Current Queue Status</h2>
+        <div id="tokenList" class="token-list admin-list"></div>
+    </div>
+
+    <script type="module">
+        import { authenticateAnonymously, generateToken, callNextToken, resetQueue, subscribeToQueue } from './app.js';
+
+        // Initialize auth
+        await authenticateAnonymously();
+
+        // Subscribe to queue updates
+        subscribeToQueue((tokens) => {
+            const tokenList = document.getElementById('tokenList');
+            tokenList.innerHTML = tokens.map(token => `
+                <div class="token ${token.called ? 'called' : ''} ${token.priority === 1 ? 'priority' : ''}">
+                    ${token.priority === 1 ? '⚡' : ''} Token ${token.number}
+                </div>
+            `).join('');
+        });
+
+        // Make functions available to HTML
+        window.generateToken = generateToken;
+        window.callNextToken = callNextToken;
+        window.resetQueue = resetQueue;
+    </script>
+</body>
+</html>
+
+// display.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Queue Display</title>
+    <link rel="stylesheet" href="styles.css">
+    <meta http-equiv="refresh" content="3600"> <!-- Auto-reload every hour -->
+</head>
+<body class="display">
+    <h1>Current Queue Status</h1>
+    
+    <div id="tokenList" class="token-list display-list"></div>
+
+    <script type="module">
+        import { authenticateAnonymously, subscribeToQueue } from './app.js';
+
+        // Initialize auth
+        await authenticateAnonymously();
+
+        // Subscribe to queue updates
+        subscribeToQueue((tokens) => {
+            const tokenList = document.getElementById('tokenList');
+            tokenList.innerHTML = tokens.map(token => `
+                <div class="token ${token.called ? 'called' : ''} ${token.priority === 1 ? 'priority' : ''}">
+                    ${token.priority === 1 ? '⚡' : ''} Token ${token.number}
+                </div>
+            `).join('');
+        });
+    </script>
+</body>
+</html>
+
+/* styles.css */
+:root {
+    --primary-color: #2196F3;
+    --danger-color: #f44336;
+    --priority-color: #ff9800;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+}
+
+/* Display page specific styles */
+.display {
+    font-size: 5rem;
+    padding: 2rem;
+}
+
+.display h1 {
+    margin-bottom: 2rem;
+}
+
+.display-list .token {
+    font-size: 7rem;
+    margin: 2rem 0;
+    padding: 2rem;
+    border-bottom: 2px solid #eee;
+}
+
+/* Admin page specific styles */
+.admin {
+    font-size: 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.panel {
+    margin: 2rem 0;
+    padding: 1rem;
+    border: 1px solid #eee;
+    border-radius: 8px;
+}
+
+.button {
+    padding: 1rem 2rem;
+    font-size: 1.2rem;
+    margin: 0.5rem;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.button.priority {
+    background-color: var(--priority-color);
+}
+
+.button.danger {
+    background-color: var(--danger-color);
+}
+
+/* Shared styles */
+.token {
+    padding: 1rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+    background-color: #f5f5f5;
+}
+
+.token.called {
+    color: #999;
+    text-decoration: line-through;
+}
+
+.token.priority {
+    background-color: #fff3e0;
+    border-left: 5px solid var(--priority-color);
+}
+
+@media (max-width: 768px) {
+    .display {
+        font-size: 3rem;
+    }
+    
+    .display-list .token {
+        font-size: 4rem;
+        margin: 1rem 0;
+        padding: 1rem;
+    }
+}
+
