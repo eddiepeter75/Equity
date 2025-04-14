@@ -1,1 +1,1 @@
-# Equity
+Queue Management App
